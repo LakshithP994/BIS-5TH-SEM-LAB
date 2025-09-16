@@ -1,0 +1,127 @@
+import numpy as np
+
+# Define a Job Shop Problem setup
+class JobShop:
+    def __init__(self, jobs, num_machines):
+        self.jobs = jobs  # List of jobs (each job has a list of operations (machine, time))
+        self.num_jobs = len(jobs)
+        self.num_machines = num_machines
+        self.num_operations = sum(len(job) for job in jobs)
+
+# Define the PSO Class
+class PSO_JSP:
+    def __init__(self, job_shop, num_particles=30, max_iter=100, w=0.5, c1=1.5, c2=1.5):
+        self.job_shop = job_shop
+        self.num_particles = num_particles
+        self.max_iter = max_iter
+        self.w = w  # inertia weight
+        self.c1 = c1  # cognitive coefficient
+        self.c2 = c2  # social coefficient
+        
+        # Initialize the swarm (particles)
+        self.particles = [self._init_particle() for _ in range(num_particles)]
+        self.gbest = None
+        self.gbest_fitness = float('inf')
+    
+    def _init_particle(self):
+        # Initialize particle with random schedule (permutation of operations)
+        schedule = np.random.permutation(self.job_shop.num_operations)  # Random permutation of operations
+        return {
+            'position': schedule,
+            'velocity': np.zeros_like(schedule),  # Velocity (change in position)
+            'pbest': schedule.copy(),
+            'pbest_fitness': float('inf')
+        }
+    
+    def _calculate_fitness(self, schedule):
+        """
+        Calculate the makespan for a given schedule.
+        """
+        machine_times = [0] * self.job_shop.num_machines  # Track time on each machine
+        job_end_times = [0] * self.job_shop.num_jobs  # Track end time for each job
+        
+        # For each operation in the schedule, find the corresponding job and machine
+        for op_idx in schedule:
+            job_idx, op_idx_in_job = self._get_job_and_op(op_idx)
+            machine, time = self.job_shop.jobs[job_idx][op_idx_in_job]
+            
+            # Find the start time of the operation
+            start_time = max(machine_times[machine], job_end_times[job_idx])
+            finish_time = start_time + time
+            machine_times[machine] = finish_time  # Update machine's available time
+            job_end_times[job_idx] = finish_time  # Update job's completion time
+            
+        return max(job_end_times)  # Makespan is the max finish time
+    
+    def _get_job_and_op(self, op_idx):
+        """
+        Retrieve job and operation index from the global schedule index.
+        """
+        current_idx = 0
+        for job_idx, job in enumerate(self.job_shop.jobs):
+            if op_idx < current_idx + len(job):
+                return job_idx, op_idx - current_idx
+            current_idx += len(job)
+        return -1, -1
+    
+    def update_particles(self):
+        for particle in self.particles:
+            # Update fitness of current position (schedule)
+            fitness = self._calculate_fitness(particle['position'])
+            
+            # Update personal best (pbest)
+            if fitness < particle['pbest_fitness']:
+                particle['pbest_fitness'] = fitness
+                particle['pbest'] = particle['position'].copy()
+                
+            # Update global best (gbest)
+            if fitness < self.gbest_fitness:
+                self.gbest_fitness = fitness
+                self.gbest = particle['position'].copy()
+    
+    def update_velocity_and_position(self):
+        for particle in self.particles:
+            # Update velocity based on personal and global bests
+            r1, r2 = np.random.rand(2)
+            cognitive = self.c1 * r1 * (particle['pbest'] - particle['position'])
+            social = self.c2 * r2 * (self.gbest - particle['position'])
+            inertia = self.w * particle['velocity']
+            
+            # Update velocity (simple version for this problem)
+            particle['velocity'] = inertia + cognitive + social
+            # Update position based on velocity (apply changes)
+            
+            # To ensure that the positions are integers and permutations
+            # First round the values and convert them back to integers
+            particle['position'] = np.clip(np.round(particle['position']).astype(int), 0, self.job_shop.num_operations - 1)
+
+            # Ensure that the schedule remains a valid permutation (no duplicates)
+            particle['position'] = np.unique(particle['position'], return_index=True)[1]
+
+    def run(self):
+        for iteration in range(self.max_iter):
+            self.update_particles()  # Evaluate fitness and update personal/global best
+            self.update_velocity_and_position()  # Update velocities and positions of particles
+            
+            print(f"Iteration {iteration+1}/{self.max_iter} | Best Makespan: {self.gbest_fitness}")
+        
+        return self.gbest, self.gbest_fitness
+
+# Example Job Shop Problem Setup
+jobs = [
+    [(0, 3), (1, 2), (2, 4)],  # Job 0: [Machine 0, 3 units], [Machine 1, 2 units], [Machine 2, 4 units]
+    [(0, 4), (2, 3), (1, 5)],  # Job 1: [Machine 0, 4 units], [Machine 2, 3 units], [Machine 1, 5 units]
+    [(1, 6), (0, 1), (2, 2)],  # Job 2: [Machine 1, 6 units], [Machine 0, 1 unit], [Machine 2, 2 units]
+]
+
+num_machines = 3  # Number of machines
+
+# Create Job Shop and PSO Solver
+job_shop = JobShop(jobs, num_machines)
+pso_solver = PSO_JSP(job_shop)
+
+# Run the PSO algorithm to find the optimal schedule
+best_schedule, best_makespan = pso_solver.run()
+
+print(f"Best Schedule: {best_schedule}")
+print(f"Best Makespan: {best_makespan}")
